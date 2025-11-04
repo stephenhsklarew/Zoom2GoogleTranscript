@@ -1,0 +1,15 @@
+# Video Transcription Tool Requirements
+
+# Google APIs
+google-auth-oauthlib==1.2.0
+google-auth-httplib2==0.2.0
+google-api-python-client==2.149.0
+
+# Whisper AI for transcription
+openai-whisper>=20231117
+
+# Speaker diarization (identifying different speakers)
+pyannote.audio==3.1.1
+
+# Terminal UI
+rich==13.7.0
