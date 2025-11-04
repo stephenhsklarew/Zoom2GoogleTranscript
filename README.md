@@ -140,6 +140,10 @@ Optional:
 
   --hf-token TOKEN         Hugging Face token for speaker diarization
                            (can also use HF_TOKEN environment variable)
+
+  --since DATE             Only process videos modified after this date
+                           Format: YYYY-MM-DD or YYYY-MM-DD HH:MM:SS
+                           Examples: 2024-12-01 or "2024-12-01 14:30:00"
 ```
 
 ## 📊 Model Comparison
@@ -236,6 +240,19 @@ export HF_TOKEN=hf_your_token
 python video_transcriber.py ~/Conferences/2024 \
   --model medium \
   --recursive
+```
+
+### Example 4: Incremental Processing
+
+```bash
+# Only process videos from this week
+python video_transcriber.py ~/Documents/Zoom --since 2024-12-01
+
+# Process videos from a specific date and time
+python video_transcriber.py ~/Documents/Zoom --since "2024-12-01 14:30:00"
+
+# Useful for daily/weekly automation - only transcribe new recordings
+python video_transcriber.py ~/Documents/Zoom --since $(date -v-7d +%Y-%m-%d)
 ```
 
 ## 🔒 Security & Privacy
