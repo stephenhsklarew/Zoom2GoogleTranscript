@@ -238,19 +238,31 @@ class VideoTranscriber:
             console.print(f"[yellow]Calendar lookup failed: {e}[/yellow]")
             return None
 
-    def find_videos(self, root_folder: str, recursive: bool = True) -> List[str]:
+    def find_videos(self, root_folder: str, recursive: bool = True, since_date: datetime = None) -> List[str]:
         """
         Find all mp4 files in the folder
 
         Args:
             root_folder: Root directory to search
             recursive: Search subdirectories recursively
+            since_date: Only include videos modified after this date (optional)
 
         Returns:
             List of video file paths
         """
         pattern = "**/*.mp4" if recursive else "*.mp4"
         videos = list(Path(root_folder).glob(pattern))
+
+        # Filter by modification date if specified
+        if since_date:
+            filtered_videos = []
+            for video in videos:
+                # Get file modification time
+                mod_time = datetime.fromtimestamp(Path(video).stat().st_mtime)
+                if mod_time >= since_date:
+                    filtered_videos.append(str(video))
+            return filtered_videos
+
         return [str(v) for v in videos]
 
     def transcribe_video(self, video_path: str) -> Dict:
@@ -473,7 +485,7 @@ class VideoTranscriber:
         return doc_id
 
     def process_videos(self, root_folder: str, recursive: bool = True,
-                      folder_id: str = None) -> List[Dict]:
+                      folder_id: str = None, since_date: datetime = None) -> List[Dict]:
         """
         Process all videos in the folder
 
@@ -481,13 +493,16 @@ class VideoTranscriber:
             root_folder: Root directory containing videos
             recursive: Search subdirectories
             folder_id: Optional Google Drive folder ID for output docs
+            since_date: Only process videos modified after this date (optional)
 
         Returns:
             List of processing results
         """
         # Find videos
         console.print(f"[cyan]Scanning for videos in: {root_folder}[/cyan]")
-        videos = self.find_videos(root_folder, recursive)
+        if since_date:
+            console.print(f"[cyan]Filtering videos modified after: {since_date.strftime('%Y-%m-%d %H:%M:%S')}[/cyan]")
+        videos = self.find_videos(root_folder, recursive, since_date)
 
         if not videos:
             console.print("[yellow]No mp4 files found![/yellow]")
@@ -656,6 +671,8 @@ Examples:
   python video_transcriber.py /path/to/videos
   python video_transcriber.py /path/to/videos --model medium
   python video_transcriber.py /path/to/videos --hf-token hf_xxxxx
+  python video_transcriber.py /path/to/videos --since 2024-12-01
+  python video_transcriber.py /path/to/videos --since "2024-12-01 14:30:00"
   export HF_TOKEN=hf_xxxxx && python video_transcriber.py /path/to/videos
   python video_transcriber.py /path/to/videos --no-recursive
   python video_transcriber.py /path/to/videos --folder-id abc123xyz
@@ -690,8 +707,28 @@ Examples:
         '--hf-token',
         help='Hugging Face token for speaker diarization (can also use HF_TOKEN env variable)'
     )
+    parser.add_argument(
+        '--since',
+        help='Only process videos modified after this date (format: YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)'
+    )
 
     args = parser.parse_args()
+
+    # Parse since date if provided
+    since_date = None
+    if args.since:
+        try:
+            # Try parsing with time first
+            if ' ' in args.since:
+                since_date = datetime.strptime(args.since, '%Y-%m-%d %H:%M:%S')
+            else:
+                # Parse date only, set time to 00:00:00
+                since_date = datetime.strptime(args.since, '%Y-%m-%d')
+            console.print(f"[cyan]Will only process videos modified after: {since_date.strftime('%Y-%m-%d %H:%M:%S')}[/cyan]")
+        except ValueError:
+            console.print(f"[red]Error: Invalid date format. Use YYYY-MM-DD or YYYY-MM-DD HH:MM:SS[/red]")
+            console.print(f"[red]Examples: 2024-12-01 or 2024-12-01 14:30:00[/red]")
+            sys.exit(1)
 
     # Validate video folder
     if not os.path.isdir(args.video_folder):
@@ -726,7 +763,8 @@ Examples:
     results = transcriber.process_videos(
         args.video_folder,
         recursive=not args.no_recursive,
-        folder_id=args.folder_id
+        folder_id=args.folder_id,
+        since_date=since_date
     )
 
     # Print summary
