@@ -150,6 +150,34 @@ class VideoTranscriber:
             console.print(f"[yellow]Could not parse date from folder: {folder_name}[/yellow]")
             return None
 
+    def get_meeting_name_from_folder(self, video_path: str) -> str:
+        """
+        Extract meeting name from Zoom folder, removing the date/time prefix
+
+        Format: "2025-07-02 13.00.28 Meeting Name" -> "Meeting Name"
+
+        Args:
+            video_path: Full path to video file
+
+        Returns:
+            Meeting name from folder, or filename if parsing fails
+        """
+        try:
+            # Get parent folder name
+            folder_name = Path(video_path).parent.name
+
+            # Remove date/time prefix (first 20 characters: "2025-07-02 13.00.28 ")
+            if len(folder_name) > 20:
+                meeting_name = folder_name[20:].strip()
+                if meeting_name:
+                    return meeting_name
+
+            # Fallback to folder name if no meeting name after prefix
+            return folder_name
+        except Exception as e:
+            # Ultimate fallback to video filename
+            return Path(video_path).stem
+
     def find_calendar_event(self, meeting_datetime: datetime) -> Dict:
         """
         Find calendar event matching the meeting time
@@ -238,7 +266,7 @@ class VideoTranscriber:
             console.print(f"[yellow]Calendar lookup failed: {e}[/yellow]")
             return None
 
-    def find_videos(self, root_folder: str, recursive: bool = True, since_date: datetime = None) -> List[str]:
+    def find_videos(self, root_folder: str, recursive: bool = True, since_date: datetime = None, min_size_mb: float = 5.0) -> List[str]:
         """
         Find all mp4 files in the folder
 
@@ -246,6 +274,7 @@ class VideoTranscriber:
             root_folder: Root directory to search
             recursive: Search subdirectories recursively
             since_date: Only include videos modified after this date (optional)
+            min_size_mb: Minimum file size in MB (default: 5.0)
 
         Returns:
             List of video file paths
@@ -253,17 +282,24 @@ class VideoTranscriber:
         pattern = "**/*.mp4" if recursive else "*.mp4"
         videos = list(Path(root_folder).glob(pattern))
 
-        # Filter by modification date if specified
-        if since_date:
-            filtered_videos = []
-            for video in videos:
-                # Get file modification time
-                mod_time = datetime.fromtimestamp(Path(video).stat().st_mtime)
-                if mod_time >= since_date:
-                    filtered_videos.append(str(video))
-            return filtered_videos
+        filtered_videos = []
+        for video in videos:
+            # Get file size in MB
+            size_mb = Path(video).stat().st_size / (1024 * 1024)
 
-        return [str(v) for v in videos]
+            # Skip files under minimum size
+            if size_mb < min_size_mb:
+                continue
+
+            # Filter by modification date if specified
+            if since_date:
+                mod_time = datetime.fromtimestamp(Path(video).stat().st_mtime)
+                if mod_time < since_date:
+                    continue
+
+            filtered_videos.append(str(video))
+
+        return filtered_videos
 
     def transcribe_video(self, video_path: str) -> Dict:
         """
@@ -446,11 +482,12 @@ class VideoTranscriber:
         # Format: Date, Title - Transcript, Starting timestamp, blank line, then dialogue
         current_date = datetime.now().strftime('%b %d, %Y')  # e.g., "Oct 31, 2025"
 
-        # Use calendar event title if available, otherwise use video filename
+        # Use calendar event title if available, otherwise use folder name
         if calendar_event and calendar_event.get('title'):
             meeting_title = calendar_event['title']
         else:
-            meeting_title = Path(video_path).stem
+            # Use folder name (with date/time removed) as fallback
+            meeting_title = self.get_meeting_name_from_folder(video_path)
 
         doc_title = f"{meeting_title} - Transcript"
 
@@ -581,8 +618,12 @@ class VideoTranscriber:
                         description=f"[cyan]Creating Doc ({idx}/{len(videos)}): {video_name}"
                     )
 
-                    # Document title (just the video name, we add "- Transcript" inside)
-                    title = video_name
+                    # Document title - use calendar event title if available, otherwise folder name
+                    if calendar_event and calendar_event.get('title'):
+                        title = calendar_event['title']
+                    else:
+                        title = self.get_meeting_name_from_folder(video_path)
+
                     doc_id = self.create_google_doc(
                         title,
                         transcript_result,
@@ -696,7 +737,8 @@ Examples:
     )
     parser.add_argument(
         '--folder-id',
-        help='Google Drive folder ID to save documents in'
+        default='155R7deqDMsu_YUwi8irlEgix2PBTcnbe',
+        help='Google Drive folder ID to save documents in (default: 155R7deqDMsu_YUwi8irlEgix2PBTcnbe)'
     )
     parser.add_argument(
         '--credentials',
