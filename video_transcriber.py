@@ -266,7 +266,7 @@ class VideoTranscriber:
             console.print(f"[yellow]Calendar lookup failed: {e}[/yellow]")
             return None
 
-    def find_videos(self, root_folder: str, recursive: bool = True, since_date: datetime = None, min_size_mb: float = 5.0) -> List[str]:
+    def find_videos(self, root_folder: str, recursive: bool = True, since_date: datetime = None, until_date: datetime = None, min_size_mb: float = 5.0) -> List[str]:
         """
         Find all mp4 files in the folder
 
@@ -274,6 +274,7 @@ class VideoTranscriber:
             root_folder: Root directory to search
             recursive: Search subdirectories recursively
             since_date: Only include videos modified after this date (optional)
+            until_date: Only include videos modified before this date (optional)
             min_size_mb: Minimum file size in MB (default: 5.0)
 
         Returns:
@@ -292,10 +293,13 @@ class VideoTranscriber:
                 continue
 
             # Filter by modification date if specified
-            if since_date:
-                mod_time = datetime.fromtimestamp(Path(video).stat().st_mtime)
-                if mod_time < since_date:
-                    continue
+            mod_time = datetime.fromtimestamp(Path(video).stat().st_mtime)
+
+            if since_date and mod_time < since_date:
+                continue
+
+            if until_date and mod_time > until_date:
+                continue
 
             filtered_videos.append(str(video))
 
@@ -522,7 +526,7 @@ class VideoTranscriber:
         return doc_id
 
     def process_videos(self, root_folder: str, recursive: bool = True,
-                      folder_id: str = None, since_date: datetime = None) -> List[Dict]:
+                      folder_id: str = None, since_date: datetime = None, until_date: datetime = None) -> List[Dict]:
         """
         Process all videos in the folder
 
@@ -531,6 +535,7 @@ class VideoTranscriber:
             recursive: Search subdirectories
             folder_id: Optional Google Drive folder ID for output docs
             since_date: Only process videos modified after this date (optional)
+            until_date: Only process videos modified before this date (optional)
 
         Returns:
             List of processing results
@@ -539,7 +544,9 @@ class VideoTranscriber:
         console.print(f"[cyan]Scanning for videos in: {root_folder}[/cyan]")
         if since_date:
             console.print(f"[cyan]Filtering videos modified after: {since_date.strftime('%Y-%m-%d %H:%M:%S')}[/cyan]")
-        videos = self.find_videos(root_folder, recursive, since_date)
+        if until_date:
+            console.print(f"[cyan]Filtering videos modified before: {until_date.strftime('%Y-%m-%d %H:%M:%S')}[/cyan]")
+        videos = self.find_videos(root_folder, recursive, since_date, until_date)
 
         if not videos:
             console.print("[yellow]No mp4 files found![/yellow]")
@@ -753,6 +760,10 @@ Examples:
         '--since',
         help='Only process videos modified after this date (format: YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)'
     )
+    parser.add_argument(
+        '--until',
+        help='Only process videos modified before this date (format: YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)'
+    )
 
     args = parser.parse_args()
 
@@ -768,8 +779,25 @@ Examples:
                 since_date = datetime.strptime(args.since, '%Y-%m-%d')
             console.print(f"[cyan]Will only process videos modified after: {since_date.strftime('%Y-%m-%d %H:%M:%S')}[/cyan]")
         except ValueError:
-            console.print(f"[red]Error: Invalid date format. Use YYYY-MM-DD or YYYY-MM-DD HH:MM:SS[/red]")
+            console.print(f"[red]Error: Invalid date format for --since. Use YYYY-MM-DD or YYYY-MM-DD HH:MM:SS[/red]")
             console.print(f"[red]Examples: 2024-12-01 or 2024-12-01 14:30:00[/red]")
+            sys.exit(1)
+
+    # Parse until date if provided
+    until_date = None
+    if args.until:
+        try:
+            # Try parsing with time first
+            if ' ' in args.until:
+                until_date = datetime.strptime(args.until, '%Y-%m-%d %H:%M:%S')
+            else:
+                # Parse date only, set time to 23:59:59 to include the entire day
+                until_date = datetime.strptime(args.until, '%Y-%m-%d')
+                until_date = until_date.replace(hour=23, minute=59, second=59)
+            console.print(f"[cyan]Will only process videos modified before: {until_date.strftime('%Y-%m-%d %H:%M:%S')}[/cyan]")
+        except ValueError:
+            console.print(f"[red]Error: Invalid date format for --until. Use YYYY-MM-DD or YYYY-MM-DD HH:MM:SS[/red]")
+            console.print(f"[red]Examples: 2024-12-31 or 2024-12-31 23:59:59[/red]")
             sys.exit(1)
 
     # Validate video folder
@@ -806,7 +834,8 @@ Examples:
         args.video_folder,
         recursive=not args.no_recursive,
         folder_id=args.folder_id,
-        since_date=since_date
+        since_date=since_date,
+        until_date=until_date
     )
 
     # Print summary
