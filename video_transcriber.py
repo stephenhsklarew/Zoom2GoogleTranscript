@@ -484,7 +484,14 @@ class VideoTranscriber:
 
         # Build document content - Google Meet style
         # Format: Date, Title - Transcript, Starting timestamp, blank line, then dialogue
-        current_date = datetime.now().strftime('%b %d, %Y')  # e.g., "Oct 31, 2025"
+
+        # Get video capture date (from Zoom folder name or file modification time)
+        video_date = self.parse_zoom_folder_datetime(video_path)
+        if not video_date:
+            # Fallback to file modification time if can't parse folder name
+            video_date = datetime.fromtimestamp(Path(video_path).stat().st_mtime)
+
+        video_date_str = video_date.strftime('%b %d, %Y')  # e.g., "Oct 31, 2025"
 
         # Use calendar event title if available, otherwise use folder name
         if calendar_event and calendar_event.get('title'):
@@ -498,7 +505,7 @@ class VideoTranscriber:
         # Get attendee names from calendar event (for speaker identification)
         attendees = calendar_event.get('attendees', []) if calendar_event else []
 
-        content = f"{current_date}\n"
+        content = f"{video_date_str}\n"
         content += f"{doc_title}\n"
 
         # Add attendee list if available
